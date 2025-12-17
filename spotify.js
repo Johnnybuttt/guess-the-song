@@ -2,7 +2,7 @@
 import { randomString, sha256Base64Url } from "./pkce.js";
 
 // ✅ Replace this with YOUR Spotify Client ID
-export const SPOTIFY_CLIENT_ID = "PASTE_YOUR_CLIENT_ID_HERE";
+export const SPOTIFY_CLIENT_ID = "b73a4ec396574050bbfd3c398514bfc2";
 
 // ✅ Hard-code redirect for GitHub Pages (most reliable)
 export const REDIRECT_URI = "https://johnnybuttt.github.io/guess-the-song/callback.html";
