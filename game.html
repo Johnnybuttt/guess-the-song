@@ -12,101 +12,294 @@
 
   <div class="card">
     <div class="kpi">
-      <div><b>Round</b><div id="round" class="small">0</div></div>
-      <div><b>Time</b><div id="time" class="small">—</div></div>
+      <div><b>Round</b><div id="roundLabel" class="small">0 / 0</div></div>
+      <div><b>Time left</b><div id="timer" class="small">—</div></div>
       <div><b>Score</b><div id="score" class="small">0</div></div>
     </div>
 
     <div class="hr"></div>
 
     <div class="row">
-      <button id="login" class="secondary">Login Spotify</button>
-      <button id="init" disabled>Initialize Player</button>
+      <button id="loginBtn" class="secondary">Login Spotify</button>
+      <button id="initBtn" disabled>Initialize Player</button>
+      <button id="playBtn" disabled>Play Round</button>
+      <button id="skipBtn" class="secondary" disabled>Skip</button>
+      <button id="quitBtn" class="secondary">Change Settings</button>
     </div>
 
-    <p id="status" class="small"></p>
+    <div class="hr"></div>
+
+    <p class="small" id="status">—</p>
+
+    <div class="row">
+      <input id="guess" placeholder="Type the song title while it plays…" disabled>
+      <button id="submit" disabled>Submit</button>
+    </div>
+
+    <p id="result" style="margin-top:10px;"></p>
   </div>
 </div>
 
-<!-- 1) Define the global callback BEFORE loading the SDK -->
+<!-- 1) Define global callback BEFORE loading SDK -->
 <script>
-  window.__playerReady = false;
-
+  window.__sdkReady = false;
   window.onSpotifyWebPlaybackSDKReady = () => {
-    window.__playerReady = true;
+    window.__sdkReady = true;
+    const init = document.getElementById("initBtn");
+    init.disabled = false;
     document.getElementById("status").textContent = "Spotify SDK loaded. Click Initialize Player.";
-    document.getElementById("init").disabled = false;
   };
 </script>
 
-<!-- 2) Load the SDK AFTER the callback exists -->
+<!-- 2) Load SDK -->
 <script src="https://sdk.scdn.co/spotify-player.js"></script>
 
-<!-- 3) Module code can import your auth + create the player -->
+<!-- 3) Game logic -->
 <script type="module">
-  import { beginLogin, isAuthed, getAccessToken } from "./spotify.js";
+  import { beginLogin, isAuthed, getAccessToken, spotifyFetch } from "./spotify.js";
 
+  // SETTINGS from your first 2 pages
+  const roundsTotal = Number(localStorage.getItem("rounds") || 10);
+  const clipSeconds = Number(localStorage.getItem("clip") || 30);
+
+  // Default playlist if you haven't built playlist UI yet
+  const PLAYLIST_ID = "37i9dQZF1DXcBWIGoYBM5M"; // Today's Top Hits
+
+  // UI
+  const loginBtn = document.getElementById("loginBtn");
+  const initBtn = document.getElementById("initBtn");
+  const playBtn = document.getElementById("playBtn");
+  const skipBtn = document.getElementById("skipBtn");
+  const quitBtn = document.getElementById("quitBtn");
   const statusEl = document.getElementById("status");
-  const loginBtn = document.getElementById("login");
-  const initBtn = document.getElementById("init");
+  const roundLabel = document.getElementById("roundLabel");
+  const timerEl = document.getElementById("timer");
+  const scoreEl = document.getElementById("score");
+  const guessEl = document.getElementById("guess");
+  const submitBtn = document.getElementById("submit");
+  const resultEl = document.getElementById("result");
 
+  // State
+  let player = null;
+  let deviceId = null;
+  let tracks = [];
+  let current = null;
+  let round = 0;
+  let score = 0;
+  let roundActive = false;
+  let countdown = null;
+  let remainingMs = 0;
+
+  function setStatus(t) { statusEl.textContent = t; }
+  function setResult(t) { resultEl.textContent = t; }
+
+  function normalizeTitle(s) {
+    return (s || "")
+      .toLowerCase()
+      .replace(/\(.*?\)/g, "")
+      .replace(/\[.*?\]/g, "")
+      .replace(/feat\.|ft\./g, "")
+      .replace(/[^a-z0-9\s]/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function updateUI() {
+    roundLabel.textContent = `${round} / ${roundsTotal}`;
+    scoreEl.textContent = String(score);
+
+    loginBtn.disabled = isAuthed();
+    loginBtn.textContent = isAuthed() ? "Logged in" : "Login Spotify";
+
+    initBtn.disabled = !window.__sdkReady || !isAuthed() || !!deviceId;
+    playBtn.disabled = !deviceId || !tracks.length || roundActive || round >= roundsTotal;
+    skipBtn.disabled = !roundActive;
+
+    guessEl.disabled = !roundActive;
+    submitBtn.disabled = !roundActive;
+  }
+
+  async function transferPlayback() {
+    await spotifyFetch("/me/player", {
+      method: "PUT",
+      body: { device_ids: [deviceId], play: false }
+    });
+  }
+
+  async function loadPlaylistTracks(playlistId) {
+    let url = `/playlists/${playlistId}/tracks?limit=100`;
+    const out = [];
+    while (url) {
+      const data = await spotifyFetch(url);
+      for (const item of data.items || []) {
+        const t = item.track;
+        if (!t || !t.uri || !t.duration_ms) continue;
+        out.push({
+          id: t.id,
+          uri: t.uri,
+          name: t.name,
+          duration_ms: t.duration_ms,
+          artist: (t.artists && t.artists[0] && t.artists[0].name) ? t.artists[0].name : "Unknown"
+        });
+      }
+      url = data.next ? data.next.replace("https://api.spotify.com/v1", "") : null;
+    }
+    return out;
+  }
+
+  function pickRandomTrack() {
+    return tracks[Math.floor(Math.random() * tracks.length)];
+  }
+
+  function stopCountdown() {
+    if (countdown) clearInterval(countdown);
+    countdown = null;
+  }
+
+  async function pausePlayback() {
+    try {
+      await spotifyFetch(`/me/player/pause?device_id=${deviceId}`, { method: "PUT" });
+    } catch {}
+  }
+
+  function startCountdown(ms) {
+    remainingMs = ms;
+    timerEl.textContent = `${Math.ceil(ms / 1000)}s`;
+    stopCountdown();
+    countdown = setInterval(async () => {
+      remainingMs -= 200;
+      timerEl.textContent = `${Math.max(0, Math.ceil(remainingMs / 1000))}s`;
+      if (remainingMs <= 0) {
+        stopCountdown();
+        await pausePlayback();
+        roundActive = false;
+        setResult(`Time! It was "${current.name}" — ${current.artist}`);
+        updateUI();
+      }
+    }, 200);
+  }
+
+  async function playClip(track) {
+    const clipMs = clipSeconds * 1000;
+    const maxStart = Math.max(0, track.duration_ms - clipMs);
+    const startMs = Math.floor(Math.random() * (maxStart + 1));
+
+    await spotifyFetch(`/me/player/play?device_id=${deviceId}`, {
+      method: "PUT",
+      body: { uris: [track.uri] }
+    });
+
+    await spotifyFetch(`/me/player/seek?position_ms=${startMs}&device_id=${deviceId}`, {
+      method: "PUT"
+    });
+
+    startCountdown(clipMs);
+  }
+
+  async function startRound() {
+    setResult("");
+    guessEl.value = "";
+    round += 1;
+    current = pickRandomTrack();
+    roundActive = true;
+    updateUI();
+    await playClip(current);
+  }
+
+  async function endRoundCorrect() {
+    stopCountdown();
+    await pausePlayback();
+    roundActive = false;
+    score += 1;
+    setResult(`✅ Correct! "${current.name}" — ${current.artist}`);
+    updateUI();
+  }
+
+  async function skipRound() {
+    stopCountdown();
+    await pausePlayback();
+    roundActive = false;
+    setResult(`Skipped. It was "${current.name}" — ${current.artist}`);
+    updateUI();
+  }
+
+  // Buttons
   loginBtn.onclick = () => beginLogin();
+  quitBtn.onclick = () => window.location.href = "index.html";
 
   initBtn.onclick = async () => {
     try {
-      if (!isAuthed()) {
-        statusEl.textContent = "You need to log in first.";
-        return;
-      }
-      if (!window.__playerReady || !window.Spotify) {
-        statusEl.textContent = "SDK not ready yet. Refresh and try again.";
-        return;
-      }
+      if (!isAuthed()) { setStatus("Log in first."); return; }
+      setStatus("Creating browser player…");
 
-      statusEl.textContent = "Creating Spotify browser player…";
-
-      const player = new window.Spotify.Player({
+      player = new window.Spotify.Player({
         name: "Guess The Song (Browser Player)",
         getOAuthToken: cb => cb(getAccessToken()),
         volume: 0.8
       });
 
-      player.addListener("ready", ({ device_id }) => {
-        statusEl.textContent = "Player ready. Device ID: " + device_id;
-        console.log("Device ID:", device_id);
+      player.addListener("ready", async ({ device_id }) => {
+        deviceId = device_id;
+        setStatus("Player ready. Transferring playback + loading tracks…");
+        try {
+          await transferPlayback();
+          tracks = await loadPlaylistTracks(PLAYLIST_ID);
+          setStatus(`Ready. Loaded ${tracks.length} songs. ${roundsTotal} rounds, ${clipSeconds}s clips.`);
+        } catch (e) {
+          setStatus("Init failed: " + (e?.message || e));
+          console.error(e);
+        }
+        updateUI();
       });
 
-      player.addListener("not_ready", () => {
-        statusEl.textContent = "Player went offline. Refresh.";
-      });
-
-      player.addListener("initialization_error", ({ message }) => {
-        statusEl.textContent = "Init error: " + message;
-      });
-
-      player.addListener("authentication_error", ({ message }) => {
-        statusEl.textContent = "Auth error: " + message;
-      });
-
-      player.addListener("account_error", ({ message }) => {
-        statusEl.textContent = "Account error: " + message;
-      });
+      player.addListener("authentication_error", ({ message }) => setStatus("Auth error: " + message));
+      player.addListener("account_error", ({ message }) => setStatus("Account error: " + message));
+      player.addListener("initialization_error", ({ message }) => setStatus("Init error: " + message));
+      player.addListener("not_ready", () => setStatus("Player went offline. Refresh."));
 
       await player.connect();
-      statusEl.textContent = "Connecting… open Spotify once if needed.";
+      setStatus("Connecting…");
     } catch (e) {
-      statusEl.textContent = "Error: " + (e?.message || e);
+      setStatus("Error: " + (e?.message || e));
       console.error(e);
     }
   };
 
-  // Optional: show status if already logged in
-  if (isAuthed()) {
-    statusEl.textContent = "Logged in. Waiting for Spotify SDK…";
-    loginBtn.disabled = true;
-  } else {
-    statusEl.textContent = "Not logged in yet.";
-  }
+  playBtn.onclick = async () => {
+    try {
+      await startRound();
+    } catch (e) {
+      round -= 1;
+      roundActive = false;
+      setStatus("Could not play. Open Spotify once and try again. " + (e?.message || e));
+      updateUI();
+    }
+  };
+
+  skipBtn.onclick = () => skipRound();
+
+  submitBtn.onclick = async () => {
+    const g = normalizeTitle(guessEl.value);
+    if (!g) return;
+
+    const a = normalizeTitle(current?.name);
+    if (g === a) {
+      await endRoundCorrect();
+    } else {
+      setResult("Not quite — keep guessing while it plays.");
+    }
+  };
+
+  guessEl.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") submitBtn.click();
+  });
+
+  // Initial UI state
+  setStatus(isAuthed()
+    ? "Logged in. Load the Spotify SDK then Initialize Player."
+    : "Not logged in yet."
+  );
+  updateUI();
 </script>
 </body>
 </html>
