@@ -115,17 +115,31 @@
     submitBtn.disabled = !active;
   }
 
+  // Adds endpoint context to errors
+  async function fetchWithLabel(path, opts, label) {
+    try {
+      return await spotifyFetch(path, opts);
+    } catch (e) {
+      throw new Error(`${label} failed (${path}): ${e?.message || e}`);
+    }
+  }
+
   async function transferPlayback() {
-    await spotifyFetch("/me/player", {
-      method: "PUT",
-      body: { device_ids: [deviceId], play: false }
-    });
+    await fetchWithLabel(
+      "/me/player",
+      { method: "PUT", body: { device_ids: [deviceId], play: false } },
+      "Transfer playback"
+    );
   }
 
   // Expanded "Your songs": combine 3 time ranges (~150 unique tracks)
   async function loadTopTracks() {
     async function fetchRange(range) {
-      const data = await spotifyFetch(`/me/top/tracks?limit=50&time_range=${range}`);
+      const data = await fetchWithLabel(
+        `/me/top/tracks?limit=50&time_range=${range}`,
+        {},
+        `Top tracks ${range}`
+      );
       return (data.items || []).map(t => ({
         uri: t.uri,
         name: t.name,
@@ -144,37 +158,36 @@
     return all.filter(t => t.uri && !seen.has(t.uri) && seen.add(t.uri));
   }
 
-  // "Random songs": use recommendations seeded by random picks from your top tracks
-  // (avoids /available-genre-seeds which can 404)
+  // Reliable "Random songs": Spotify Search (random letter + random offset)
   async function loadRandomTracks() {
-    const top = await loadTopTracks();
-    if (top.length < 5) throw new Error("Not enough top tracks to generate recommendations.");
-
-    const seedUris = [];
-    const used = new Set();
-    while (seedUris.length < 5) {
-      const t = top[Math.floor(Math.random() * top.length)];
-      if (!t.uri || used.has(t.uri)) continue;
-      used.add(t.uri);
-      seedUris.push(t.uri);
-    }
-
-    const seedIds = seedUris.map(u => u.split(":").pop()).join(",");
-
-    const me = await spotifyFetch("/me");
+    const me = await fetchWithLabel("/me", {}, "Get profile");
     const market = me?.country || "US";
 
-    const rec = await spotifyFetch(
-      `/recommendations?limit=100&market=${encodeURIComponent(market)}&seed_tracks=${encodeURIComponent(seedIds)}&min_popularity=15`
+    const letters = "abcdefghijklmnopqrstuvwxyz";
+    const letter = letters[Math.floor(Math.random() * letters.length)];
+
+    // Spotify Search supports offsets; keep it moderate to avoid empty pages
+    const offset = Math.floor(Math.random() * 300); // 0–299
+
+    // Use a very simple query; "track:<letter>" is not real syntax, so we just search the letter.
+    // This returns a broad mix that feels random.
+    const q = encodeURIComponent(letter);
+
+    const data = await fetchWithLabel(
+      `/search?q=${q}&type=track&limit=50&offset=${offset}&market=${encodeURIComponent(market)}`,
+      {},
+      "Random search"
     );
 
-    const out = (rec.tracks || []).map(t => ({
+    const items = data?.tracks?.items || [];
+    const out = items.map(t => ({
       uri: t.uri,
       name: t.name,
       artist: t.artists?.[0]?.name || "",
       duration_ms: t.duration_ms
     })).filter(t => t.uri && t.duration_ms);
 
+    // De-dupe
     const seen = new Set();
     return out.filter(t => (seen.has(t.uri) ? false : (seen.add(t.uri), true)));
   }
@@ -185,6 +198,7 @@
 
     try {
       tracks = songPool === "top" ? await loadTopTracks() : await loadRandomTracks();
+      if (!tracks.length) throw new Error("Got 0 tracks. Click Shuffle More.");
       setStatus(`Loaded ${tracks.length} songs (${songPool === "top" ? "Your songs" : "Random songs"}).`);
     } catch (e) {
       setStatus("Load failed: " + (e?.message || e));
@@ -234,14 +248,17 @@
     const maxStart = Math.max(0, track.duration_ms - clipMs);
     const startMs = Math.floor(Math.random() * (maxStart + 1));
 
-    await spotifyFetch(`/me/player/play?device_id=${deviceId}`, {
-      method: "PUT",
-      body: { uris: [track.uri] }
-    });
+    await fetchWithLabel(
+      `/me/player/play?device_id=${deviceId}`,
+      { method: "PUT", body: { uris: [track.uri] } },
+      "Play"
+    );
 
-    await spotifyFetch(`/me/player/seek?device_id=${deviceId}&position_ms=${startMs}`, {
-      method: "PUT"
-    });
+    await fetchWithLabel(
+      `/me/player/seek?device_id=${deviceId}&position_ms=${startMs}`,
+      { method: "PUT" },
+      "Seek"
+    );
 
     startTimer(clipMs);
   }
@@ -337,7 +354,6 @@
     await player.connect();
   };
 
-  // Initial UI
   setStatus(isAuthed()
     ? `Logged in. Mode: ${songPool === "random" ? "Random songs" : "Your songs"}. Initialize the player.`
     : "Not logged in yet."
