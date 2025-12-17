@@ -1,0 +1,27 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Spotify Login</title>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div class="container">
+  <div class="card">
+    <p id="msg">Logging in…</p>
+  </div>
+</div>
+
+<script type="module">
+  import { handleCallback } from "./spotify.js";
+  const msg = document.getElementById("msg");
+  try {
+    await handleCallback();
+    msg.textContent = "Success! Redirecting…";
+    window.location.href = "game.html";
+  } catch (e) {
+    msg.textContent = e.message;
+  }
+</script>
+</body>
+</html>

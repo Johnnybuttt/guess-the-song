@@ -1,0 +1,95 @@
+body {
+    font-family: system-ui;
+    margin: 0;
+    padding: 24px;
+    background: #0b0b0b;
+    color: #f5f5f5;
+  }
+  
+  .container {
+    max-width: 780px;
+    margin: 0 auto;
+  }
+  
+  .card {
+    background: #141414;
+    border: 1px solid #2a2a2a;
+    border-radius: 14px;
+    padding: 18px;
+    margin: 14px 0;
+  }
+  
+  h1 {
+    margin-bottom: 8px;
+  }
+  
+  .row {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  
+  button {
+    background: #1db954;
+    color: #0b0b0b;
+    border: none;
+    border-radius: 12px;
+    padding: 10px 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  
+  button.secondary {
+    background: #2b2b2b;
+    color: #f5f5f5;
+  }
+  
+  button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  
+  .pill {
+    background: #222;
+    border: 1px solid #333;
+    border-radius: 999px;
+    padding: 10px 14px;
+    cursor: pointer;
+  }
+  
+  .pill.selected {
+    outline: 2px solid #1db954;
+  }
+  
+  input {
+    width: 100%;
+    padding: 10px 12px;
+    background: #0f0f0f;
+    color: #f5f5f5;
+    border: 1px solid #2a2a2a;
+    border-radius: 12px;
+  }
+  
+  .small {
+    font-size: 14px;
+    opacity: 0.8;
+  }
+  
+  .hr {
+    height: 1px;
+    background: #222;
+    margin: 14px 0;
+  }
+  
+  .kpi {
+    display: flex;
+    gap: 12px;
+  }
+  
+  .kpi div {
+    background: #0f0f0f;
+    border: 1px solid #2a2a2a;
+    border-radius: 12px;
+    padding: 10px 12px;
+  }
+  
