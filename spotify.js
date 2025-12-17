@@ -1,13 +1,9 @@
 // guess-the-song/spotify.js
 import { randomString, sha256Base64Url } from "./pkce.js";
 
-// ✅ Replace this with YOUR Spotify Client ID (from Spotify Developer Dashboard)
-export const SPOTIFY_CLIENT_ID = "PASTE_YOUR_CLIENT_ID_HERE";
-
-// ✅ Hard-coded redirect for your GitHub Pages site
+export const SPOTIFY_CLIENT_ID = "YOUR_REAL_CLIENT_ID_HERE";
 export const REDIRECT_URI = "https://johnnybuttt.github.io/guess-the-song/callback.html";
 
-// ✅ Scopes: Web Playback + control + Top Tracks
 const SCOPES = [
   "streaming",
   "user-read-private",
@@ -23,7 +19,11 @@ const LS = {
   exp: "sp_token_exp"
 };
 
-// --- Auth helpers ---
+export function logout() {
+  localStorage.removeItem(LS.verifier);
+  localStorage.removeItem(LS.token);
+  localStorage.removeItem(LS.exp);
+}
 
 export function getAccessToken() {
   const token = localStorage.getItem(LS.token);
@@ -36,10 +36,9 @@ export function isAuthed() {
   return !!getAccessToken();
 }
 
-export async function beginLogin() {
+export async function beginLogin({ force = false } = {}) {
   const verifier = randomString(64);
   const challenge = await sha256Base64Url(verifier);
-
   localStorage.setItem(LS.verifier, verifier);
 
   const params = new URLSearchParams({
@@ -50,6 +49,9 @@ export async function beginLogin() {
     code_challenge_method: "S256",
     code_challenge: challenge
   });
+
+  // Forces Spotify to show the consent screen again
+  if (force) params.set("show_dialog", "true");
 
   window.location.href = "https://accounts.spotify.com/authorize?" + params.toString();
 }
@@ -86,22 +88,17 @@ export async function handleCallback() {
   }
 
   const data = await res.json();
-
-  // Store access token (simple version, no refresh token flow)
   const expiresAt = Date.now() + (data.expires_in * 1000) - 10_000;
 
   localStorage.setItem(LS.token, data.access_token);
   localStorage.setItem(LS.exp, String(expiresAt));
 
-  // Clean the URL
   url.searchParams.delete("code");
   url.searchParams.delete("state");
   window.history.replaceState({}, document.title, url.toString());
 
   return data.access_token;
 }
-
-// --- Spotify Web API helper ---
 
 export async function spotifyFetch(path, { method = "GET", body } = {}) {
   const token = getAccessToken();
