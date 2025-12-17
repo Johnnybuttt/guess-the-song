@@ -1,19 +1,20 @@
 // guess-the-song/spotify.js
 import { randomString, sha256Base64Url } from "./pkce.js";
 
-// ✅ Replace this with YOUR Spotify Client ID
-export const SPOTIFY_CLIENT_ID = "b73a4ec396574050bbfd3c398514bfc2";
+// ✅ Replace this with YOUR Spotify Client ID (from Spotify Developer Dashboard)
+export const SPOTIFY_CLIENT_ID = "PASTE_YOUR_CLIENT_ID_HERE";
 
-// ✅ Hard-code redirect for GitHub Pages (most reliable)
+// ✅ Hard-coded redirect for your GitHub Pages site
 export const REDIRECT_URI = "https://johnnybuttt.github.io/guess-the-song/callback.html";
 
-// Scopes for Web Playback SDK + playback control
+// ✅ Scopes: Web Playback + control + Top Tracks
 const SCOPES = [
   "streaming",
   "user-read-private",
   "user-read-email",
   "user-modify-playback-state",
-  "user-read-playback-state"
+  "user-read-playback-state",
+  "user-top-read"
 ].join(" ");
 
 const LS = {
@@ -86,13 +87,13 @@ export async function handleCallback() {
 
   const data = await res.json();
 
-  // Store token (note: this simple version does not refresh tokens)
+  // Store access token (simple version, no refresh token flow)
   const expiresAt = Date.now() + (data.expires_in * 1000) - 10_000;
 
   localStorage.setItem(LS.token, data.access_token);
   localStorage.setItem(LS.exp, String(expiresAt));
 
-  // Clean URL so code isn't sitting in the address bar
+  // Clean the URL
   url.searchParams.delete("code");
   url.searchParams.delete("state");
   window.history.replaceState({}, document.title, url.toString());
@@ -120,15 +121,6 @@ export async function spotifyFetch(path, { method = "GET", body } = {}) {
     throw new Error(`Spotify API ${res.status}: ${text || "Request failed"}`);
   }
 
-  // 204 No Content
   if (res.status === 204) return null;
   return res.json();
-}
-
-// Optional: helper if you later add "playlist URL or ID" input again
-export function parsePlaylistId(input) {
-  const s = (input || "").trim();
-  if (!s) return "";
-  const m = s.match(/playlist\/([a-zA-Z0-9]+)/);
-  return m ? m[1] : s;
 }
