@@ -3,9 +3,8 @@ import { randomString, sha256Base64Url } from "./pkce.js";
 export const SPOTIFY_CLIENT_ID = "b73a4ec396574050bbfd3c398514bfc2";
 
 // Works correctly inside subfolders
-export const REDIRECT_URI =
-  window.location.origin +
-  window.location.pathname.replace(/\/[^\/]*$/, "/callback.html");
+export const REDIRECT_URI = "https://johnnybuttt.github.io/guess-the-song/callback.html";
+
 
 const SCOPES = [
   "streaming",
