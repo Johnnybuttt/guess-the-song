@@ -2,15 +2,24 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Guess The Song — Length</title>
+  <title>Guess The Song — Settings</title>
   <link rel="stylesheet" href="app.css">
 </head>
 <body>
 <div class="container">
-  <h1>Clip Length</h1>
+  <h1>Settings</h1>
 
   <div class="card">
+    <p class="small">Clip length</p>
     <div class="row" id="lengths"></div>
+
+    <div class="hr"></div>
+
+    <p class="small">Song pool</p>
+    <div class="row" id="pool"></div>
+
+    <div class="hr"></div>
+
     <div class="row">
       <button class="secondary" onclick="history.back()">Back</button>
       <button id="start">Start Game</button>
@@ -19,25 +28,47 @@
 </div>
 
 <script>
+  // Clip length
   const lengths = [10, 30, 60];
-  let selected = 30;
-  const el = document.getElementById("lengths");
+  let selectedLen = Number(localStorage.getItem("clip") || 30);
+  const lengthsEl = document.getElementById("lengths");
 
-  function render() {
-    el.innerHTML = "";
+  function renderLengths() {
+    lengthsEl.innerHTML = "";
     lengths.forEach(l => {
       const d = document.createElement("div");
-      d.className = "pill" + (l === selected ? " selected" : "");
+      d.className = "pill" + (l === selectedLen ? " selected" : "");
       d.textContent = l + " seconds";
-      d.onclick = () => { selected = l; render(); };
-      el.appendChild(d);
+      d.onclick = () => { selectedLen = l; renderLengths(); };
+      lengthsEl.appendChild(d);
     });
   }
 
-  render();
+  // Song pool
+  const pools = [
+    { key: "top", label: "Your songs" },
+    { key: "random", label: "Random songs" }
+  ];
+  let selectedPool = localStorage.getItem("song_pool") || "top";
+  const poolEl = document.getElementById("pool");
+
+  function renderPools() {
+    poolEl.innerHTML = "";
+    pools.forEach(p => {
+      const d = document.createElement("div");
+      d.className = "pill" + (p.key === selectedPool ? " selected" : "");
+      d.textContent = p.label;
+      d.onclick = () => { selectedPool = p.key; renderPools(); };
+      poolEl.appendChild(d);
+    });
+  }
+
+  renderLengths();
+  renderPools();
 
   document.getElementById("start").onclick = () => {
-    localStorage.setItem("clip", selected);
+    localStorage.setItem("clip", selectedLen);
+    localStorage.setItem("song_pool", selectedPool);
     window.location.href = "game.html";
   };
 </script>
