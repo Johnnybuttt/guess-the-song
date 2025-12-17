@@ -1,7 +1,7 @@
 // guess-the-song/spotify.js
 import { randomString, sha256Base64Url } from "./pkce.js";
 
-export const SPOTIFY_CLIENT_ID = "YOUR_REAL_CLIENT_ID_HERE";
+export const SPOTIFY_CLIENT_ID = "b73a4ec396574050bbfd3c398514bfc2";
 export const REDIRECT_URI = "https://johnnybuttt.github.io/guess-the-song/callback.html";
 
 const SCOPES = [
