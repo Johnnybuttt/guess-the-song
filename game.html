@@ -2,6 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Guess The Song</title>
   <link rel="stylesheet" href="app.css">
 </head>
@@ -11,30 +12,101 @@
 
   <div class="card">
     <div class="kpi">
-      <div>Round<br><span id="round">0</span></div>
-      <div>Time<br><span id="time">—</span></div>
-      <div>Score<br><span id="score">0</span></div>
+      <div><b>Round</b><div id="round" class="small">0</div></div>
+      <div><b>Time</b><div id="time" class="small">—</div></div>
+      <div><b>Score</b><div id="score" class="small">0</div></div>
     </div>
 
     <div class="hr"></div>
 
     <div class="row">
-      <button id="login">Login Spotify</button>
-      <button id="play" disabled>Play</button>
+      <button id="login" class="secondary">Login Spotify</button>
+      <button id="init" disabled>Initialize Player</button>
     </div>
 
-    <input id="guess" placeholder="Song title…" disabled>
-    <button id="submit" disabled>Submit</button>
-
-    <p id="result"></p>
+    <p id="status" class="small"></p>
   </div>
 </div>
 
+<!-- 1) Define the global callback BEFORE loading the SDK -->
+<script>
+  window.__playerReady = false;
+
+  window.onSpotifyWebPlaybackSDKReady = () => {
+    window.__playerReady = true;
+    document.getElementById("status").textContent = "Spotify SDK loaded. Click Initialize Player.";
+    document.getElementById("init").disabled = false;
+  };
+</script>
+
+<!-- 2) Load the SDK AFTER the callback exists -->
 <script src="https://sdk.scdn.co/spotify-player.js"></script>
+
+<!-- 3) Module code can import your auth + create the player -->
 <script type="module">
   import { beginLogin, isAuthed, getAccessToken } from "./spotify.js";
 
-  document.getElementById("login").onclick = beginLogin;
+  const statusEl = document.getElementById("status");
+  const loginBtn = document.getElementById("login");
+  const initBtn = document.getElementById("init");
+
+  loginBtn.onclick = () => beginLogin();
+
+  initBtn.onclick = async () => {
+    try {
+      if (!isAuthed()) {
+        statusEl.textContent = "You need to log in first.";
+        return;
+      }
+      if (!window.__playerReady || !window.Spotify) {
+        statusEl.textContent = "SDK not ready yet. Refresh and try again.";
+        return;
+      }
+
+      statusEl.textContent = "Creating Spotify browser player…";
+
+      const player = new window.Spotify.Player({
+        name: "Guess The Song (Browser Player)",
+        getOAuthToken: cb => cb(getAccessToken()),
+        volume: 0.8
+      });
+
+      player.addListener("ready", ({ device_id }) => {
+        statusEl.textContent = "Player ready. Device ID: " + device_id;
+        console.log("Device ID:", device_id);
+      });
+
+      player.addListener("not_ready", () => {
+        statusEl.textContent = "Player went offline. Refresh.";
+      });
+
+      player.addListener("initialization_error", ({ message }) => {
+        statusEl.textContent = "Init error: " + message;
+      });
+
+      player.addListener("authentication_error", ({ message }) => {
+        statusEl.textContent = "Auth error: " + message;
+      });
+
+      player.addListener("account_error", ({ message }) => {
+        statusEl.textContent = "Account error: " + message;
+      });
+
+      await player.connect();
+      statusEl.textContent = "Connecting… open Spotify once if needed.";
+    } catch (e) {
+      statusEl.textContent = "Error: " + (e?.message || e);
+      console.error(e);
+    }
+  };
+
+  // Optional: show status if already logged in
+  if (isAuthed()) {
+    statusEl.textContent = "Logged in. Waiting for Spotify SDK…";
+    loginBtn.disabled = true;
+  } else {
+    statusEl.textContent = "Not logged in yet.";
+  }
 </script>
 </body>
 </html>
