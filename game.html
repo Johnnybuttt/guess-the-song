@@ -117,6 +117,11 @@
   let hintUsedThisRound = false;
   let totalMsForRound = 0;
   let remainingMsForRound = 0;
+  let streak = 0;
+  
+  const streakCard = document.getElementById("streakCard");
+  const streakEl = document.getElementById("streak");
+  const equalizer = document.getElementById("equalizer");
 
   /* ---------------- helpers ---------------- */
 
@@ -381,9 +386,17 @@
           active = false;
           streak = 0; // Reset streak on timeout
           equalizer.style.display = "none";
-          setResult(`⏰ Time's up! It was "${current.name}" by ${current.artist}`, "timeout");
+          
+          if (current) {
+            const trackName = current.name || "Unknown";
+            const trackArtist = current.artist || "Unknown";
+            setResult(`⏰ Time's up! It was "${trackName}" by ${trackArtist}`, "timeout");
+            nowTitle.textContent = trackName;
+            nowArtist.textContent = trackArtist;
+            history.push({ track: current, result: "timeout", hint: hintUsedThisRound });
+          }
+          
           setStatus(""); // Clear hint message
-          history.push({ track: current, result: "timeout", hint: hintUsedThisRound });
           updateUI();
           maybeEndGame();
         })();
@@ -477,29 +490,48 @@
     score += gained;
     active = false;
     
+    if (!current) {
+      console.error("Current track is null in correctGuess");
+      return;
+    }
+    
     // Add celebration animation
     resultEl.classList.add("celebrate");
     setTimeout(() => resultEl.classList.remove("celebrate"), 600);
     
-    setResult(`✅ Correct! "${current.name}" by ${current.artist} (+${gained} pts${streak > 1 ? `, ${streak}x streak!` : ""})`, "correct");
+    const trackName = current.name || "Unknown";
+    const trackArtist = current.artist || "Unknown";
+    
+    setResult(`✅ Correct! "${trackName}" by ${trackArtist} (+${gained} pts${streak > 1 ? `, ${streak}x streak!` : ""})`, "correct");
     setStatus(""); // Clear hint message
-    nowTitle.textContent = current.name;
-    nowArtist.textContent = current.artist;
+    nowTitle.textContent = trackName;
+    nowArtist.textContent = trackArtist;
     history.push({ track: current, result: "correct", hint: hintUsedThisRound, points: gained });
     updateUI();
     maybeEndGame();
   }
 
   async function skipRound() {
+    if (!current) return; // Safety check
+    
     stopTimer();
     await pausePlayback();
     active = false;
     streak = 0; // Reset streak on skip
     equalizer.style.display = "none";
-    setResult(`⏭️ Skipped. It was "${current.name}" by ${current.artist}`);
+    
+    const trackName = current.name || "Unknown";
+    const trackArtist = current.artist || "Unknown";
+    
+    setResult(`⏭️ Skipped. It was "${trackName}" by ${trackArtist}`);
     setStatus(""); // Clear hint message
-    updateUI();
+    
+    // Update now playing to show the answer
+    nowTitle.textContent = trackName;
+    nowArtist.textContent = trackArtist;
+    
     history.push({ track: current, result: "skipped", hint: hintUsedThisRound });
+    updateUI();
     maybeEndGame();
   }
 
