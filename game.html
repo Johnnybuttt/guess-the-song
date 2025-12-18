@@ -34,7 +34,7 @@
     <p id="status" class="small">—</p>
 
     <div class="row">
-      <input id="guess" placeholder="Type the full song title…" disabled autocomplete="off">
+      <input id="guess" placeholder="Type the full song title…" disabled autocomplete="off" tabindex="0">
       <button id="submit" disabled>Submit</button>
     </div>
 
@@ -122,13 +122,15 @@
     shuffleBtn.disabled = !deviceId;
     playBtn.disabled = !deviceId || !tracks.length || active || round >= roundsTotal;
     skipBtn.disabled = !active;
-    guessEl.disabled = !active;
-    submitBtn.disabled = !active;
     
-    // Ensure input is focused when enabled
-    if (active && !guessEl.disabled) {
-      // Use setTimeout to ensure DOM has updated
-      setTimeout(() => guessEl.focus(), 0);
+    // Enable/disable input and submit button
+    const shouldBeEnabled = active;
+    guessEl.disabled = !shouldBeEnabled;
+    submitBtn.disabled = !shouldBeEnabled;
+    
+    // Remove readonly attribute if it exists
+    if (shouldBeEnabled) {
+      guessEl.removeAttribute("readonly");
     }
   }
 
@@ -143,7 +145,11 @@
       await sleep(1000); // Give more time for transfer
     } catch (e) {
       console.error("Transfer playback error:", e);
-      throw new Error("Failed to transfer playback to browser. Make sure Spotify is not playing on another device.");
+      // Check if it's a 403 - likely means no Premium account
+      if (e.message.includes("403") || e.message.includes("Access denied")) {
+        throw new Error("Spotify Premium required. The Web Playback SDK only works with Premium accounts. Please upgrade your account.");
+      }
+      throw new Error("Failed to transfer playback to browser. Make sure Spotify is not playing on another device and you have Premium.");
     }
   }
 
@@ -266,6 +272,15 @@
 
       startTimer(clipMs);
       setStatus("Playing…");
+      
+      // Ensure input stays enabled and focused after playback starts
+      if (active) {
+        setTimeout(() => {
+          guessEl.disabled = false;
+          guessEl.removeAttribute("readonly");
+          guessEl.focus();
+        }, 600);
+      }
     } catch (e) {
       active = false;
       setStatus(`Playback error: ${e.message}`);
@@ -283,9 +298,29 @@
     current = tracks[Math.floor(Math.random() * tracks.length)];
     active = true;
     updateUI();
-    // Focus the input field immediately so user can start typing
-    guessEl.focus();
+    
+    // Ensure input is enabled and focusable
+    guessEl.disabled = false;
+    guessEl.removeAttribute("readonly");
+    
+    // Focus the input field after a brief delay to ensure DOM is updated
+    setTimeout(() => {
+      guessEl.focus();
+      // Make sure it's still enabled (in case something disabled it)
+      if (active) {
+        guessEl.disabled = false;
+      }
+    }, 100);
+    
     await playClip(current);
+    
+    // Focus again after playback starts, in case it lost focus
+    if (active) {
+      setTimeout(() => {
+        guessEl.focus();
+        guessEl.disabled = false;
+      }, 500);
+    }
   }
 
   async function correctGuess() {
@@ -327,13 +362,49 @@
   };
 
   guessEl.onkeydown = e => e.key === "Enter" && submitBtn.click();
+  
+  // Ensure input is always focusable when it should be enabled
+  guessEl.addEventListener("click", () => {
+    if (active && guessEl.disabled) {
+      guessEl.disabled = false;
+      guessEl.focus();
+    }
+  });
+  
+  // Prevent any event that might be blocking input
+  guessEl.addEventListener("focus", () => {
+    if (active) {
+      guessEl.disabled = false;
+      guessEl.removeAttribute("readonly");
+    }
+  });
+
+  async function checkPremiumAccount() {
+    try {
+      const user = await spotifyFetch("/me");
+      // Premium users have product: "premium", free users have product: "free" or "open"
+      return user?.product === "premium";
+    } catch (e) {
+      console.error("Error checking account:", e);
+      return false;
+    }
+  }
 
   initBtn.onclick = async () => {
     if (!window.Spotify || !isAuthed()) return setStatus("Login first.");
     
     try {
-      setStatus("Creating Spotify player…");
+      setStatus("Checking account…");
       initBtn.disabled = true;
+      
+      const isPremium = await checkPremiumAccount();
+      if (!isPremium) {
+        setStatus("❌ Spotify Premium required. The Web Playback SDK only works with Premium accounts. Please upgrade at spotify.com/premium");
+        initBtn.disabled = false;
+        return;
+      }
+      
+      setStatus("Creating Spotify player…");
 
       player = new Spotify.Player({
         name: "Guess The Song (Browser Player)",

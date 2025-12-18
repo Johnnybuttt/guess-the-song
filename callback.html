@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src https://accounts.spotify.com; object-src 'none'; base-uri 'self';">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src https://accounts.spotify.com https://api.spotify.com; object-src 'none'; base-uri 'self';">
   <title>Spotify Login</title>
   <link rel="stylesheet" href="app.css">
 </head>
@@ -16,12 +16,33 @@
 <script type="module">
   import { handleCallback } from "./spotify.js";
   const msg = document.getElementById("msg");
+  
+  // Add timeout to prevent infinite hanging
+  const timeout = setTimeout(() => {
+    msg.textContent = "Login is taking too long. Please check your connection and try again.";
+    console.error("Login timeout");
+  }, 15000); // 15 second timeout
+  
   try {
+    msg.textContent = "Processing login…";
     await handleCallback();
+    clearTimeout(timeout);
     msg.textContent = "Success! Redirecting…";
-    window.location.href = "game.html";
+    setTimeout(() => {
+      window.location.href = "game.html";
+    }, 500);
   } catch (e) {
-    msg.textContent = e.message;
+    clearTimeout(timeout);
+    console.error("Login error:", e);
+    msg.textContent = `Error: ${e.message}`;
+    msg.style.color = "#ff6b6b";
+    
+    // Add a retry button
+    const retryBtn = document.createElement("button");
+    retryBtn.textContent = "Try Again";
+    retryBtn.onclick = () => window.location.href = "game.html";
+    retryBtn.style.marginTop = "10px";
+    msg.parentElement.appendChild(retryBtn);
   }
 </script>
 </body>
