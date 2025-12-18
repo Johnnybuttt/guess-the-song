@@ -26,7 +26,7 @@
         <div class="stat-label">Score</div>
         <div class="stat-value" id="score">0</div>
       </div>
-      <div class="stat-card" id="streakCard" style="display: none;">
+      <div class="stat-card" id="streakCard">
         <div class="stat-label">Streak</div>
         <div class="stat-value" id="streak">0</div>
       </div>
@@ -216,19 +216,16 @@
     const progress = roundsTotal ? Math.min(1, round / roundsTotal) : 0;
     roundProgress.style.width = `${progress * 100}%`;
 
-    // Update streak display
-    if (streak > 0) {
-      streakCard.style.display = "block";
-      streakEl.textContent = streak;
-    } else {
-      streakCard.style.display = "none";
-    }
+    // Update streak display - always show it
+    streakEl.textContent = streak;
 
     // Update timer display - show "—" when not active and no timer running
-    // Don't override timer display if timer is actively counting down
-    if (!active && !timer && remainingMsForRound <= 0) {
+    // Don't override timer display if timer is actively counting down or if round is active
+    // Only update if timer isn't running AND round is not active
+    if (!timer && !active && remainingMsForRound <= 0) {
       timerEl.textContent = "—";
     }
+    // If timer is running OR round is active, don't touch it - let the timer interval handle updates
 
     loginBtn.textContent = isAuthed() ? "🔐 Re-login Spotify" : "🔐 Login Spotify";
     shuffleBtn.disabled = !deviceId;
@@ -461,8 +458,19 @@
     nowTitle.textContent = "Guess the song!";
     nowArtist.textContent = songPool === "random" ? "Random track" : "From your library";
     equalizer.style.display = "flex";
-    updateUI();
+    // Update essential UI elements without calling full updateUI (which might clear timer)
+    roundLabel.textContent = `${round} / ${roundsTotal}`;
+    streakEl.textContent = streak;
+    loginBtn.textContent = isAuthed() ? "🔐 Re-login Spotify" : "🔐 Login Spotify";
+    shuffleBtn.disabled = !deviceId;
+    playBtn.disabled = !deviceId || !tracks.length || active || round >= roundsTotal;
+    skipBtn.disabled = !active;
+    guessEl.disabled = !active;
+    submitBtn.disabled = !active;
+    hintBtn.disabled = !active;
     await playClip(current);
+    // Now update UI after timer has started
+    updateUI();
   }
 
   async function correctGuess() {
@@ -581,6 +589,7 @@
       await correctGuess();
     } else {
       streak = 0; // Reset streak on wrong answer
+      updateUI(); // Update UI to show streak reset
       resultEl.classList.add("shake");
       setTimeout(() => resultEl.classList.remove("shake"), 500);
       setResult("❌ Not quite — keep guessing!", "incorrect");
