@@ -161,6 +161,11 @@
     const progress = roundsTotal ? Math.min(1, round / roundsTotal) : 0;
     roundProgress.style.width = `${progress * 100}%`;
 
+    // Update timer display - show "—" when not active
+    if (!active && !timer) {
+      timerEl.textContent = "—";
+    }
+
     loginBtn.textContent = isAuthed() ? "🔐 Re-login Spotify" : "🔐 Login Spotify";
     shuffleBtn.disabled = !deviceId;
     playBtn.disabled = !deviceId || !tracks.length || active || round >= roundsTotal;
@@ -270,28 +275,48 @@
   }
 
   function stopTimer() {
-    if (timer) clearInterval(timer);
-    timer = null;
+    if (timer) {
+      clearInterval(timer);
+      timer = null;
+    }
   }
 
   function startTimer(ms) {
+    stopTimer(); // Clear any existing timer first
     totalMsForRound = ms;
     remainingMsForRound = ms;
-    timerEl.textContent = Math.ceil(remainingMsForRound / 1000) + "s";
-    stopTimer();
-    timer = setInterval(async () => {
-      remainingMsForRound -= 250;
-      timerEl.textContent = Math.max(0, Math.ceil(remainingMsForRound / 1000)) + "s";
+    
+    // Update display immediately
+    const updateDisplay = () => {
+      const seconds = Math.max(0, Math.ceil(remainingMsForRound / 1000));
+      timerEl.textContent = seconds + "s";
+    };
+    
+    updateDisplay();
+    
+    // Update every 100ms for smoother countdown
+    timer = setInterval(() => {
+      remainingMsForRound -= 100;
+      
       if (remainingMsForRound <= 0) {
+        remainingMsForRound = 0;
         stopTimer();
-        await pausePlayback();
-        active = false;
-        setResult(`⏰ Time's up! It was "${current.name}" by ${current.artist}`, "timeout");
-        history.push({ track: current, result: "timeout", hint: hintUsedThisRound });
-        updateUI();
-        maybeEndGame();
+        updateDisplay();
+        
+        // Handle timeout
+        (async () => {
+          await pausePlayback();
+          active = false;
+          setResult(`⏰ Time's up! It was "${current.name}" by ${current.artist}`, "timeout");
+          setStatus(""); // Clear hint message
+          history.push({ track: current, result: "timeout", hint: hintUsedThisRound });
+          updateUI();
+          maybeEndGame();
+        })();
+      } else {
+        updateDisplay();
       }
-    }, 250);
+    }, 100);
   }
 
   async function playClip(track) {
@@ -332,7 +357,9 @@
   /* ---------------- game flow ---------------- */
 
   async function startRound() {
+    stopTimer(); // Make sure any previous timer is cleared
     setResult("");
+    setStatus(""); // Clear any previous status messages (like hint messages)
     guessEl.value = "";
     round++;
     current = tracks[Math.floor(Math.random() * tracks.length)];
@@ -362,6 +389,7 @@
     score += gained;
     active = false;
     setResult(`✅ Correct! "${current.name}" by ${current.artist} (+${gained} pts)`, "correct");
+    setStatus(""); // Clear hint message
     nowTitle.textContent = current.name;
     nowArtist.textContent = current.artist;
     history.push({ track: current, result: "correct", hint: hintUsedThisRound, points: gained });
@@ -374,6 +402,7 @@
     await pausePlayback();
     active = false;
     setResult(`⏭️ Skipped. It was "${current.name}" by ${current.artist}`);
+    setStatus(""); // Clear hint message
     updateUI();
     history.push({ track: current, result: "skipped", hint: hintUsedThisRound });
     maybeEndGame();
