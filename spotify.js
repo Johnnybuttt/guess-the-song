@@ -2,7 +2,26 @@
 import { randomString, sha256Base64Url } from "./pkce.js";
 
 export const SPOTIFY_CLIENT_ID = "b73a4ec396574050bbfd3c398514bfc2";
-export const REDIRECT_URI = "https://johnnybuttt.github.io/guess-the-song/callback.html";
+
+// Allowed origins for redirect URI (security whitelist)
+const ALLOWED_ORIGINS = [
+  "https://johnnybuttt.github.io",
+  "http://localhost",
+  "http://127.0.0.1"
+];
+
+// Use current origin for redirect URI (works for both localhost and production)
+// Get the base path (everything before the filename)
+const basePath = window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/') + 1);
+const currentOrigin = window.location.origin;
+
+// Validate origin is in whitelist (extra security layer)
+const isAllowedOrigin = ALLOWED_ORIGINS.some(allowed => currentOrigin.startsWith(allowed));
+if (!isAllowedOrigin) {
+  console.warn(`Warning: Origin ${currentOrigin} is not in the allowed list. Make sure to add it to your Spotify app's redirect URIs.`);
+}
+
+export const REDIRECT_URI = `${currentOrigin}${basePath}callback.html`;
 
 const SCOPES = [
   "streaming",
@@ -90,42 +109,19 @@ export async function handleCallback() {
     code_verifier: verifier
   });
 
-  let res;
-  try {
-    res = await fetch("https://accounts.spotify.com/api/token", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body
-    });
-  } catch (e) {
-    console.error("Network error during token exchange:", e);
-    throw new Error("Network error. Please check your connection and try again.");
-  }
+  const res = await fetch("https://accounts.spotify.com/api/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body
+  });
 
   if (!res.ok) {
     const status = res.status;
-    let errorText = "";
-    try {
-      const errorData = await res.json();
-      errorText = errorData.error_description || errorData.error || "";
-      console.error("Token exchange error:", status, errorText);
-    } catch {
-      errorText = await res.text().catch(() => "");
-      console.error("Token exchange error (non-JSON):", status, errorText);
-    }
-    
-    // Provide more helpful error messages
-    if (status === 400) {
-      if (errorText.includes("redirect_uri")) {
-        throw new Error("Redirect URI mismatch. Please make sure the callback URL is registered in your Spotify app settings.");
-      }
-      throw new Error("Invalid request. Please try logging in again.");
-    } else if (status === 401) {
+    // Don't leak API error details to users
+    if (status === 400 || status === 401) {
       throw new Error("Authentication failed. Please try logging in again.");
-    } else if (status === 403) {
-      throw new Error("Access denied. Please check your app permissions.");
     }
-    throw new Error(`Authentication failed (${status}). Please try again.`);
+    throw new Error("Authentication service unavailable. Please try again later.");
   }
 
   const data = await res.json();
@@ -162,21 +158,7 @@ export async function spotifyFetch(path, { method = "GET", body } = {}) {
     if (status === 401) {
       throw new Error("Session expired. Please log in again.");
     } else if (status === 403) {
-      // Try to get more details from the response
-      let errorMsg = "Access denied. ";
-      try {
-        const errorData = await res.json().catch(() => ({}));
-        if (errorData.error?.message) {
-          errorMsg += errorData.error.message;
-        } else if (path.includes("/me/player")) {
-          errorMsg += "Spotify Premium is required for playback. Please upgrade your account.";
-        } else {
-          errorMsg += "Please check your account permissions.";
-        }
-      } catch {
-        errorMsg += "Please check your account permissions or upgrade to Premium.";
-      }
-      throw new Error(errorMsg);
+      throw new Error("Access denied. Please check your permissions.");
     } else if (status >= 500) {
       throw new Error("Spotify service unavailable. Please try again later.");
     } else {
