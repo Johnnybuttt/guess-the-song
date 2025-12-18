@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://sdk.scdn.co; style-src 'self' 'unsafe-inline'; connect-src https://accounts.spotify.com https://api.spotify.com; frame-src https://accounts.spotify.com; object-src 'none'; base-uri 'self';">
   <title>Guess The Song</title>
   <link rel="stylesheet" href="app.css">
 </head>
@@ -33,7 +34,7 @@
     <p id="status" class="small">—</p>
 
     <div class="row">
-      <input id="guess" placeholder="Type the full song title…" disabled>
+      <input id="guess" placeholder="Type the full song title…" disabled autocomplete="off">
       <button id="submit" disabled>Submit</button>
     </div>
 
@@ -52,6 +53,8 @@
   };
 </script>
 
+<!-- Note: SRI (Subresource Integrity) would require fetching the script and generating a hash.
+     Since Spotify may update their SDK, SRI is not practical here. CSP provides protection instead. -->
 <script src="https://sdk.scdn.co/spotify-player.js"></script>
 
 <script type="module">
@@ -118,6 +121,12 @@
     skipBtn.disabled = !active;
     guessEl.disabled = !active;
     submitBtn.disabled = !active;
+    
+    // Ensure input is focused when enabled
+    if (active && !guessEl.disabled) {
+      // Use setTimeout to ensure DOM has updated
+      setTimeout(() => guessEl.focus(), 0);
+    }
   }
 
   /* ---------------- spotify loaders ---------------- */
@@ -175,7 +184,8 @@
       tracks = songPool === "top" ? await loadTopTracks() : await loadRandomTracks();
       setStatus(`Loaded ${tracks.length} songs (${songPool === "top" ? "Your songs" : "Random songs"}).`);
     } catch (e) {
-      setStatus("Load failed: " + e.message);
+      // Don't expose full error details to users
+      setStatus("Failed to load songs. Please try again.");
       tracks = [];
     }
     updateUI();
@@ -244,6 +254,8 @@
     current = tracks[Math.floor(Math.random() * tracks.length)];
     active = true;
     updateUI();
+    // Focus the input field immediately so user can start typing
+    guessEl.focus();
     await playClip(current);
   }
 
@@ -277,6 +289,11 @@
       await correctGuess();
     } else {
       setResult("Not quite — keep guessing!");
+      // Keep input enabled and focused for continued guessing
+      if (active) {
+        guessEl.focus();
+        guessEl.select(); // Select text so user can type over it
+      }
     }
   };
 
