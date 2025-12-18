@@ -3,6 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- CSP temporarily removed for debugging input issue -->
+  <!-- <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://sdk.scdn.co; connect-src 'self' https://api.spotify.com https://accounts.spotify.com; style-src 'self' 'unsafe-inline';"> -->
   <title>Guess The Song</title>
   <link rel="stylesheet" href="app.css">
 </head>
@@ -280,7 +282,19 @@
     }
   };
 
-  guessEl.onkeydown = e => e.key === "Enter" && submitBtn.click();
+  // Debug: Add input event listeners to diagnose the issue
+  guessEl.oninput = e => {
+    console.log('Input event:', e.target.value);
+  };
+  
+  guessEl.onkeydown = e => {
+    console.log('Keydown event:', e.key, 'Value:', e.target.value);
+    if (e.key === "Enter") submitBtn.click();
+  };
+  
+  guessEl.onkeyup = e => {
+    console.log('Keyup event:', e.key, 'Value:', e.target.value);
+  };
 
   initBtn.onclick = async () => {
     if (!window.Spotify || !isAuthed()) return setStatus("Login first.");
