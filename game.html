@@ -10,36 +10,42 @@
 </head>
 <body>
 <div class="container">
-  <h1>Guess The Song</h1>
+  <h1>🎵 Guess The Song 🎵</h1>
 
   <div class="card">
-    <div class="kpi">
-      <div><b>Round</b><div id="roundLabel" class="small">0 / 0</div></div>
-      <div><b>Time</b><div id="timer" class="small">—</div></div>
-      <div><b>Score</b><div id="score" class="small">0</div></div>
+    <div class="stats">
+      <div class="stat-card">
+        <div class="stat-label">Round</div>
+        <div class="stat-value" id="roundLabel">0 / 0</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Time</div>
+        <div class="stat-value" id="timer">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Score</div>
+        <div class="stat-value" id="score">0</div>
+      </div>
     </div>
 
-    <div class="hr"></div>
-
-    <div class="row">
-      <button id="loginBtn" class="secondary">Login Spotify</button>
-      <button id="initBtn" disabled>Initialize Player</button>
-      <button id="shuffleBtn" class="secondary" disabled>Shuffle More</button>
-      <button id="playBtn" disabled>Play Round</button>
-      <button id="skipBtn" class="secondary" disabled>Skip</button>
-      <button id="quitBtn" class="secondary">Change Settings</button>
+    <div class="controls">
+      <button id="loginBtn" class="secondary">🔐 Login Spotify</button>
+      <button id="initBtn" class="primary" disabled>▶️ Initialize Player</button>
+      <button id="shuffleBtn" class="secondary" disabled>🔀 Shuffle More</button>
+      <button id="playBtn" class="primary" disabled>🎮 Play Round</button>
+      <button id="skipBtn" class="secondary" disabled>⏭️ Skip</button>
+      <button id="quitBtn" class="secondary">⚙️ Settings</button>
     </div>
 
-    <div class="hr"></div>
+    <div class="status" id="status">Ready to play!</div>
 
-    <p id="status" class="small">—</p>
-
-    <div class="row">
-      <input id="guess" placeholder="Type the full song title…" disabled>
-      <button id="submit" disabled>Submit</button>
+    <div class="guess-section">
+      <div class="guess-input-wrapper">
+        <input id="guess" type="text" placeholder="Type the song title here..." disabled autocomplete="off" tabindex="0">
+        <button id="submit" class="primary" disabled>Submit</button>
+      </div>
+      <div class="result" id="result"></div>
     </div>
-
-    <p id="result"></p>
   </div>
 </div>
 
@@ -107,14 +113,33 @@
     return t;
   }
 
-  function setStatus(t) { statusEl.textContent = t; }
-  function setResult(t) { resultEl.textContent = t; }
+  function setStatus(t) { 
+    statusEl.textContent = t;
+    // Add playing animation when music is playing
+    if (active && t.includes("Playing")) {
+      statusEl.classList.add("playing");
+    } else {
+      statusEl.classList.remove("playing");
+    }
+  }
+  
+  function setResult(t, type = "") { 
+    resultEl.textContent = t;
+    resultEl.className = "result";
+    if (type === "correct") {
+      resultEl.classList.add("correct");
+    } else if (type === "incorrect") {
+      resultEl.classList.add("incorrect");
+    } else if (type === "timeout") {
+      resultEl.classList.add("timeout");
+    }
+  }
 
   function updateUI() {
     roundLabel.textContent = `${round} / ${roundsTotal}`;
     scoreEl.textContent = score;
 
-    loginBtn.textContent = isAuthed() ? "Re-login Spotify" : "Login Spotify";
+    loginBtn.textContent = isAuthed() ? "🔐 Re-login Spotify" : "🔐 Login Spotify";
     shuffleBtn.disabled = !deviceId;
     playBtn.disabled = !deviceId || !tracks.length || active || round >= roundsTotal;
     skipBtn.disabled = !active;
@@ -133,6 +158,19 @@
   }
 
   async function loadTopTracks() {
+    // Dev mode uses mock data from spotify.js
+    const devMode = new URLSearchParams(window.location.search).get('dev') === 'true' 
+      || localStorage.getItem('dev_mode') === 'true';
+    if (devMode) {
+      const data = await spotifyFetch("/me/top/tracks?limit=50&time_range=medium_term");
+      return data.items.map(t => ({
+        uri: t.uri,
+        name: t.name,
+        artist: t.artists[0]?.name || "",
+        duration_ms: t.duration_ms
+      }));
+    }
+    
     async function fetchRange(r) {
       const d = await spotifyFetch(`/me/top/tracks?limit=50&time_range=${r}`);
       return d.items.map(t => ({
@@ -152,6 +190,19 @@
   }
 
   async function loadRandomTracks() {
+    // Dev mode uses mock data from spotify.js
+    const devMode = new URLSearchParams(window.location.search).get('dev') === 'true' 
+      || localStorage.getItem('dev_mode') === 'true';
+    if (devMode) {
+      const data = await spotifyFetch("/search?q=a&type=track&limit=50");
+      const seen = new Set();
+      return (data.tracks.items || []).map(t => ({
+        uri: t.uri,
+        name: t.name,
+        artist: t.artists[0]?.name || "",
+        duration_ms: t.duration_ms
+      })).filter(t => t.uri && t.duration_ms && !seen.has(t.uri) && seen.add(t.uri));
+    }
     const me = await spotifyFetch("/me");
     const market = me?.country || "US";
     const letters = "abcdefghijklmnopqrstuvwxyz";
@@ -186,6 +237,10 @@
   /* ---------------- playback ---------------- */
 
   async function pausePlayback() {
+    const devMode = new URLSearchParams(window.location.search).get('dev') === 'true' 
+      || localStorage.getItem('dev_mode') === 'true';
+    if (devMode) return; // No-op in dev mode
+    
     try {
       await spotifyFetch(`/me/player/pause?device_id=${deviceId}`, { method: "PUT" });
     } catch {}
@@ -207,13 +262,24 @@
         stopTimer();
         await pausePlayback();
         active = false;
-        setResult(`⏰ Time! It was "${current.name}" — ${current.artist}`);
+        setResult(`⏰ Time's up! It was "${current.name}" by ${current.artist}`, "timeout");
         updateUI();
       }
     }, 250);
   }
 
   async function playClip(track) {
+    const devMode = new URLSearchParams(window.location.search).get('dev') === 'true' 
+      || localStorage.getItem('dev_mode') === 'true';
+    
+    if (devMode) {
+      // Dev mode: Just start the timer, no actual playback
+      const clipMs = clipSeconds * 1000;
+      setStatus("🎵 Playing (dev mode - no audio)…");
+      startTimer(clipMs);
+      return;
+    }
+    
     const clipMs = clipSeconds * 1000;
     const startMs = Math.floor(Math.random() * Math.max(1, track.duration_ms - clipMs));
 
@@ -254,7 +320,7 @@
     await pausePlayback();
     score++;
     active = false;
-    setResult(`✅ Correct! "${current.name}" — ${current.artist}`);
+    setResult(`✅ Correct! "${current.name}" by ${current.artist}`, "correct");
     updateUI();
   }
 
@@ -262,7 +328,7 @@
     stopTimer();
     await pausePlayback();
     active = false;
-    setResult(`Skipped. It was "${current.name}" — ${current.artist}`);
+    setResult(`⏭️ Skipped. It was "${current.name}" by ${current.artist}`);
     updateUI();
   }
 
@@ -278,7 +344,7 @@
     if (normalizeTitle(guessEl.value) === normalizeTitle(current.name)) {
       await correctGuess();
     } else {
-      setResult("Not quite — keep guessing!");
+      setResult("❌ Not quite — keep guessing!", "incorrect");
     }
   };
 
@@ -297,6 +363,20 @@
   };
 
   initBtn.onclick = async () => {
+    // Check for dev mode
+    const devMode = new URLSearchParams(window.location.search).get('dev') === 'true' 
+      || localStorage.getItem('dev_mode') === 'true';
+    
+    if (devMode) {
+      // Dev mode: Skip Spotify SDK, just set deviceId
+      deviceId = "dev-device";
+      setStatus("Dev mode active. Loading mock tracks…");
+      await refreshPool();
+      setStatus("Ready! Click 'Play Round' to start.");
+      updateUI();
+      return;
+    }
+    
     if (!window.Spotify || !isAuthed()) return setStatus("Login first.");
     setStatus("Creating Spotify player…");
 
@@ -316,10 +396,19 @@
     await player.connect();
   };
 
-  setStatus(isAuthed()
-    ? `Logged in. Mode: ${songPool === "random" ? "Random songs" : "Your songs"}. Initialize the player.`
-    : "Not logged in yet."
-  );
+  // Check for dev mode
+  const devMode = new URLSearchParams(window.location.search).get('dev') === 'true' 
+    || localStorage.getItem('dev_mode') === 'true';
+  
+  if (devMode) {
+    setStatus("🔧 DEV MODE ACTIVE - No Spotify login required!");
+    initBtn.disabled = false;
+  } else {
+    setStatus(isAuthed()
+      ? `Logged in. Mode: ${songPool === "random" ? "Random songs" : "Your songs"}. Initialize the player.`
+      : "Not logged in yet."
+    );
+  }
   updateUI();
 </script>
 </body>

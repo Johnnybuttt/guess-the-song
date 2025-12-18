@@ -1,6 +1,10 @@
 // guess-the-song/spotify.js
 import { randomString, sha256Base64Url } from "./pkce.js";
 
+// Dev mode: Set ?dev=true in URL or localStorage.setItem('dev_mode', 'true')
+export const DEV_MODE = new URLSearchParams(window.location.search).get('dev') === 'true' 
+  || localStorage.getItem('dev_mode') === 'true';
+
 export const SPOTIFY_CLIENT_ID = "b73a4ec396574050bbfd3c398514bfc2";
 export const REDIRECT_URI = "https://johnnybuttt.github.io/guess-the-song/callback.html";
 
@@ -35,8 +39,23 @@ export function getAccessToken() {
 }
 
 export function isAuthed() {
+  if (DEV_MODE) return true; // Always authenticated in dev mode
   return !!getAccessToken();
 }
+
+// Mock data for dev mode
+const MOCK_TRACKS = [
+  { uri: "spotify:track:mock1", name: "Bohemian Rhapsody", artist: "Queen", duration_ms: 355000 },
+  { uri: "spotify:track:mock2", name: "Stairway to Heaven", artist: "Led Zeppelin", duration_ms: 482000 },
+  { uri: "spotify:track:mock3", name: "Hotel California", artist: "Eagles", duration_ms: 391000 },
+  { uri: "spotify:track:mock4", name: "Sweet Child O' Mine", artist: "Guns N' Roses", duration_ms: 356000 },
+  { uri: "spotify:track:mock5", name: "Imagine", artist: "John Lennon", duration_ms: 183000 },
+  { uri: "spotify:track:mock6", name: "Billie Jean", artist: "Michael Jackson", duration_ms: 294000 },
+  { uri: "spotify:track:mock7", name: "Smells Like Teen Spirit", artist: "Nirvana", duration_ms: 301000 },
+  { uri: "spotify:track:mock8", name: "Like a Rolling Stone", artist: "Bob Dylan", duration_ms: 366000 },
+  { uri: "spotify:track:mock9", name: "Wonderwall", artist: "Oasis", duration_ms: 258000 },
+  { uri: "spotify:track:mock10", name: "Don't Stop Believin'", artist: "Journey", duration_ms: 251000 },
+];
 
 export async function beginLogin({ force = false } = {}) {
   const verifier = randomString(64);
@@ -99,10 +118,7 @@ export async function handleCallback() {
     throw new Error(`Token exchange failed (${res.status}). ${text}`);
   }
 
-  const text = await res.text();
-  console.log(text);
-  throw new Error("Check token response in console");
-  
+  const data = await res.json();
   const expiresAt = Date.now() + data.expires_in * 1000 - 10000;
 
   localStorage.setItem(LS.token, data.access_token);
@@ -116,6 +132,54 @@ export async function handleCallback() {
 }
 
 export async function spotifyFetch(path, { method = "GET", body } = {}) {
+  // Dev mode: Return mock data
+  if (DEV_MODE) {
+    await new Promise(r => setTimeout(r, 300)); // Simulate network delay
+    
+    if (path === "/me") {
+      return { product: "premium", country: "US" };
+    }
+    
+    if (path === "/me/top/tracks") {
+      const timeRange = new URLSearchParams(path.split("?")[1] || "").get("time_range") || "medium_term";
+      return {
+        items: MOCK_TRACKS.map(t => ({
+          uri: t.uri,
+          name: t.name,
+          artists: [{ name: t.artist }],
+          duration_ms: t.duration_ms
+        }))
+      };
+    }
+    
+    if (path.startsWith("/search")) {
+      return {
+        tracks: {
+          items: MOCK_TRACKS.map(t => ({
+            uri: t.uri,
+            name: t.name,
+            artists: [{ name: t.artist }],
+            duration_ms: t.duration_ms
+          }))
+        }
+      };
+    }
+    
+    if (path === "/me/player") {
+      if (method === "PUT") {
+        return null; // Success
+      }
+      return { device: { id: "dev-device", is_active: true } };
+    }
+    
+    if (path.startsWith("/me/player/")) {
+      return null; // Success for play/pause/seek
+    }
+    
+    return {};
+  }
+  
+  // Real Spotify API calls
   const token = getAccessToken();
   if (!token) throw new Error("Not logged in to Spotify.");
 
