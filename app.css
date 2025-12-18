@@ -58,6 +58,23 @@ h1 {
   margin-bottom: 24px;
 }
 
+.round-progress {
+  width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  background: #181818;
+  border: 1px solid #2a2a2a;
+  margin-bottom: 24px;
+  overflow: hidden;
+}
+
+.round-progress-fill {
+  height: 100%;
+  width: 0%;
+  background: #1db954;
+  transition: width 0.3s ease;
+}
+
 .stat-card {
   background: #181818;
   border: 1px solid #2a2a2a;
@@ -147,6 +164,35 @@ button:disabled {
   display: flex;
   align-items: center;
   justify-content: center;
+  color: #b3b3b3;
+}
+
+.now-playing {
+  background: #111111;
+  border: 1px solid #1f1f1f;
+  border-radius: 8px;
+  padding: 16px 18px;
+  margin-bottom: 24px;
+}
+
+.now-playing-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  opacity: 0.7;
+  margin-bottom: 6px;
+  color: #b3b3b3;
+}
+
+.now-playing-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #ffffff;
+  margin-bottom: 2px;
+}
+
+.now-playing-artist {
+  font-size: 0.875rem;
   color: #b3b3b3;
 }
 
