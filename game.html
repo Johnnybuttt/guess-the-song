@@ -87,16 +87,19 @@
 
   const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-  async function waitForActiveDevice(timeout = 4000) {
+  async function waitForActiveDevice(timeout = 10000) {
     const start = Date.now();
     while (Date.now() - start < timeout) {
       try {
         const state = await spotifyFetch("/me/player");
         if (state?.device?.id === deviceId && state?.device?.is_active) return true;
-      } catch {}
-      await sleep(250);
+      } catch (e) {
+        // Device might not be ready yet, continue waiting
+        console.log("Waiting for device to become active...");
+      }
+      await sleep(500);
     }
-    return false;
+    throw new Error("Device did not become active in time. Please try initializing the player again.");
   }
 
   function normalizeTitle(s) {
@@ -132,11 +135,16 @@
   /* ---------------- spotify loaders ---------------- */
 
   async function transferPlayback() {
-    await spotifyFetch("/me/player", {
-      method: "PUT",
-      body: { device_ids: [deviceId], play: false }
-    });
-    await sleep(500);
+    try {
+      await spotifyFetch("/me/player", {
+        method: "PUT",
+        body: { device_ids: [deviceId], play: false }
+      });
+      await sleep(1000); // Give more time for transfer
+    } catch (e) {
+      console.error("Transfer playback error:", e);
+      throw new Error("Failed to transfer playback to browser. Make sure Spotify is not playing on another device.");
+    }
   }
 
   async function loadTopTracks() {
@@ -222,27 +230,48 @@
   }
 
   async function playClip(track) {
-    const clipMs = clipSeconds * 1000;
-    const startMs = Math.floor(Math.random() * Math.max(1, track.duration_ms - clipMs));
+    try {
+      const clipMs = clipSeconds * 1000;
+      const startMs = Math.floor(Math.random() * Math.max(1, track.duration_ms - clipMs));
 
-    await waitForActiveDevice();
+      setStatus("Waiting for device to be ready…");
+      await waitForActiveDevice();
 
-    for (let i = 0; i < 2; i++) {
-      try {
-        await spotifyFetch(`/me/player/play?device_id=${deviceId}`, {
-          method: "PUT",
-          body: { uris: [track.uri] }
-        });
-        break;
-      } catch {
-        await sleep(350);
+      setStatus("Starting playback…");
+      // Try to play the track
+      let playSuccess = false;
+      for (let i = 0; i < 3; i++) {
+        try {
+          await spotifyFetch(`/me/player/play?device_id=${deviceId}`, {
+            method: "PUT",
+            body: { uris: [track.uri] }
+          });
+          playSuccess = true;
+          break;
+        } catch (e) {
+          if (i === 2) throw e; // Re-throw on last attempt
+          await sleep(500);
+        }
       }
+
+      // Wait a bit for playback to start
+      await sleep(500);
+      
+      // Seek to random position
+      try {
+        await spotifyFetch(`/me/player/seek?device_id=${deviceId}&position_ms=${startMs}`, { method: "PUT" });
+      } catch (e) {
+        console.warn("Seek failed, but continuing:", e);
+      }
+
+      startTimer(clipMs);
+      setStatus("Playing…");
+    } catch (e) {
+      active = false;
+      setStatus(`Playback error: ${e.message}`);
+      updateUI();
+      throw e;
     }
-
-    await sleep(350);
-    await spotifyFetch(`/me/player/seek?device_id=${deviceId}&position_ms=${startMs}`, { method: "PUT" });
-
-    startTimer(clipMs);
   }
 
   /* ---------------- game flow ---------------- */
@@ -301,22 +330,71 @@
 
   initBtn.onclick = async () => {
     if (!window.Spotify || !isAuthed()) return setStatus("Login first.");
-    setStatus("Creating Spotify player…");
+    
+    try {
+      setStatus("Creating Spotify player…");
+      initBtn.disabled = true;
 
-    player = new Spotify.Player({
-      name: "Guess The Song (Browser Player)",
-      getOAuthToken: cb => cb(getAccessToken()),
-      volume: 0.8
-    });
+      player = new Spotify.Player({
+        name: "Guess The Song (Browser Player)",
+        getOAuthToken: cb => {
+          const token = getAccessToken();
+          if (!token) {
+            setStatus("Token expired. Please log in again.");
+            cb(null);
+          } else {
+            cb(token);
+          }
+        },
+        volume: 0.8
+      });
 
-    player.addListener("ready", async ({ device_id }) => {
-      deviceId = device_id;
-      setStatus("Player ready. Transferring playback…");
-      await transferPlayback();
-      await refreshPool();
-    });
+      player.addListener("ready", async ({ device_id }) => {
+        deviceId = device_id;
+        setStatus("Player ready. Transferring playback…");
+        try {
+          await transferPlayback();
+          await refreshPool();
+          setStatus("Ready! Click 'Play Round' to start.");
+        } catch (e) {
+          setStatus(`Error: ${e.message}`);
+          console.error("Player ready error:", e);
+        }
+      });
 
-    await player.connect();
+      player.addListener("not_ready", ({ device_id }) => {
+        console.log("Device not ready:", device_id);
+        setStatus("Device not ready. Please try again.");
+        initBtn.disabled = false;
+      });
+
+      player.addListener("authentication_error", ({ message }) => {
+        console.error("Authentication error:", message);
+        setStatus("Authentication failed. Please log in again.");
+        initBtn.disabled = false;
+      });
+
+      player.addListener("account_error", ({ message }) => {
+        console.error("Account error:", message);
+        setStatus("Account error. Please check your Spotify account.");
+        initBtn.disabled = false;
+      });
+
+      player.addListener("playback_error", ({ message }) => {
+        console.error("Playback error:", message);
+        setStatus(`Playback error: ${message}`);
+      });
+
+      const connected = await player.connect();
+      if (!connected) {
+        setStatus("Failed to connect player. Please try again.");
+        initBtn.disabled = false;
+      }
+    } catch (e) {
+      setStatus(`Error initializing player: ${e.message}`);
+      console.error("Init error:", e);
+      initBtn.disabled = false;
+    }
   };
 
   setStatus(isAuthed()
