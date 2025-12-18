@@ -10,17 +10,19 @@ const SCOPES = [
   "user-read-email",
   "user-modify-playback-state",
   "user-read-playback-state",
-  "user-top-read"
+  "user-top-read",
 ].join(" ");
 
 const LS = {
   verifier: "pkce_verifier",
+  state: "pkce_state",
   token: "sp_access_token",
-  exp: "sp_token_exp"
+  exp: "sp_token_exp",
 };
 
 export function logout() {
   localStorage.removeItem(LS.verifier);
+  localStorage.removeItem(LS.state);
   localStorage.removeItem(LS.token);
   localStorage.removeItem(LS.exp);
 }
@@ -39,7 +41,10 @@ export function isAuthed() {
 export async function beginLogin({ force = false } = {}) {
   const verifier = randomString(64);
   const challenge = await sha256Base64Url(verifier);
+  const state = randomString(16);
+
   localStorage.setItem(LS.verifier, verifier);
+  localStorage.setItem(LS.state, state);
 
   const params = new URLSearchParams({
     response_type: "code",
@@ -47,13 +52,14 @@ export async function beginLogin({ force = false } = {}) {
     redirect_uri: REDIRECT_URI,
     scope: SCOPES,
     code_challenge_method: "S256",
-    code_challenge: challenge
+    code_challenge: challenge,
+    state,
   });
 
-  // Forces Spotify to show the consent screen again
   if (force) params.set("show_dialog", "true");
 
-  window.location.href = "https://accounts.spotify.com/authorize?" + params.toString();
+  window.location.href =
+    "https://accounts.spotify.com/authorize?" + params.toString();
 }
 
 export async function handleCallback() {
@@ -65,6 +71,12 @@ export async function handleCallback() {
   const code = url.searchParams.get("code");
   if (!code) throw new Error("Missing code");
 
+  const returnedState = url.searchParams.get("state");
+  const expectedState = localStorage.getItem(LS.state);
+  if (!returnedState || !expectedState || returnedState !== expectedState) {
+    throw new Error("Invalid state. Try logging in again.");
+  }
+
   const verifier = localStorage.getItem(LS.verifier);
   if (!verifier) throw new Error("Missing PKCE verifier. Try logging in again.");
 
@@ -73,13 +85,13 @@ export async function handleCallback() {
     grant_type: "authorization_code",
     code,
     redirect_uri: REDIRECT_URI,
-    code_verifier: verifier
+    code_verifier: verifier,
   });
 
   const res = await fetch("https://accounts.spotify.com/api/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body
+    body,
   });
 
   if (!res.ok) {
@@ -87,8 +99,11 @@ export async function handleCallback() {
     throw new Error(`Token exchange failed (${res.status}). ${text}`);
   }
 
-  const data = await res.json();
-  const expiresAt = Date.now() + (data.expires_in * 1000) - 10_000;
+  const text = await res.text();
+  console.log(text);
+  throw new Error("Check token response in console");
+  
+  const expiresAt = Date.now() + data.expires_in * 1000 - 10000;
 
   localStorage.setItem(LS.token, data.access_token);
   localStorage.setItem(LS.exp, String(expiresAt));
@@ -108,9 +123,9 @@ export async function spotifyFetch(path, { method = "GET", body } = {}) {
     method,
     headers: {
       Authorization: `Bearer ${token}`,
-      ...(body ? { "Content-Type": "application/json" } : {})
+      ...(body ? { "Content-Type": "application/json" } : {}),
     },
-    body: body ? JSON.stringify(body) : undefined
+    body: body ? JSON.stringify(body) : undefined,
   });
 
   if (!res.ok) {
